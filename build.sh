@@ -22,11 +22,12 @@ echo "==> Cleaning"
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR"
 
-echo "==> Compiling (arm64, macOS $DEPLOY_TARGET+)"
+ARCH="$(uname -m)"   # build for this Mac (arm64 on Apple Silicon, x86_64 on Intel)
+echo "==> Compiling ($ARCH, macOS $DEPLOY_TARGET+)"
 swiftc \
   -swift-version 5 \
   -O \
-  -target "arm64-apple-macos$DEPLOY_TARGET" \
+  -target "$ARCH-apple-macos$DEPLOY_TARGET" \
   -framework Cocoa \
   -framework Security \
   -framework ServiceManagement \
@@ -54,10 +55,18 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "==> Ad-hoc signing (stable identity so the Keychain 'Always Allow' sticks)"
-codesign --force --sign - "$APP_DIR" >/dev/null 2>&1 \
-  && echo "    signed" \
-  || echo "    (codesign skipped — app still runs)"
+SIGN_ID="Claude Usage Icon Local Signing"
+echo "==> Signing"
+if codesign --force --sign "$SIGN_ID" "$APP_DIR" 2>/dev/null; then
+  echo "    signed with stable identity: $SIGN_ID"
+  echo "    (this is what makes the Keychain 'Always Allow' actually stick)"
+else
+  echo "    stable identity '$SIGN_ID' not found — falling back to ad-hoc."
+  echo "    Ad-hoc signing causes repeated Keychain prompts; run ./setup-signing.sh once to fix."
+  codesign --force --sign - "$APP_DIR" >/dev/null 2>&1 \
+    && echo "    signed (ad-hoc)" \
+    || echo "    (codesign skipped — app still runs)"
+fi
 
 echo "==> Done: $APP_DIR"
 
@@ -67,8 +76,11 @@ if [ "${1:-}" = "install" ]; then
   pkill -x "$EXEC_NAME" 2>/dev/null || true
   rm -rf "$DEST"
   cp -R "$APP_DIR" "$DEST"
+  # Refresh LaunchServices so `open` finds the freshly replaced bundle (avoids -600).
+  LSREG="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+  "$LSREG" -f "$DEST" 2>/dev/null || true
   echo "==> Launching (it registers itself as a login item on first run)"
-  open "$DEST"
+  open "$DEST" || { sleep 1; open "$DEST"; }
   echo "    Installed and running from /Applications."
 else
   echo "    Run it:   open \"$APP_DIR\""

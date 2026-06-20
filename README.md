@@ -19,9 +19,12 @@ which is exactly why the hardcoded-schema community apps stopped working.
 ## Build & run
 
 Requires the Swift toolchain (Xcode or Command Line Tools: `xcode-select --install`).
-Targets macOS 13+ on Apple Silicon.
+Targets macOS 13+; `build.sh` compiles for your Mac's architecture (Apple Silicon or Intel).
 
 ```sh
+# One-time: create a stable code-signing identity (see "Keychain prompts" below)
+./setup-signing.sh
+
 # Build and run from ./build/
 ./build.sh
 open "build/Claude Usage Icon.app"
@@ -32,8 +35,9 @@ open "build/Claude Usage Icon.app"
 
 `build.sh` compiles `Sources/main.swift` with `swiftc`, assembles a proper
 `Claude Usage Icon.app` bundle (with `LSUIElement` so there's no dock icon /
-window), and ad-hoc code-signs it. `./build.sh install` additionally copies it to
-`/Applications` and launches it.
+window), and code-signs it with the stable identity created by `setup-signing.sh`
+(falling back to ad-hoc if that identity is missing). `./build.sh install`
+additionally copies it to `/Applications` and launches it.
 
 ### Start at login
 
@@ -52,11 +56,26 @@ copy you later move or delete won't launch.
   → Privacy & Security) to get past Gatekeeper.
 - **Keychain prompt:** the first time it reads your token you'll see
   *"Claude Usage Icon wants to use information stored in 'Claude Code-credentials'
-  in your keychain."* Click **Always Allow**. The token is then cached in memory and
-  reused, so opening the menu or the periodic refresh will **not** prompt again — it
-  only re-reads the Keychain when the token expires. Because the app is ad-hoc
-  signed with a stable identity, later launches of the same build stay silent too
-  (rebuilding changes the signature and re-triggers the one-time prompt).
+  in your keychain."* Click **Always Allow** (once). The token is then cached in
+  memory and reused, so opening the menu or the periodic refresh won't prompt — it
+  only re-reads the Keychain when the token expires and Claude Code refreshes it.
+
+### Keychain prompts that keep coming back
+
+If you click **Always Allow** but still get re-prompted multiple times a day, the
+cause is **code signing**. macOS only persists "Always Allow" for apps with a
+*stable* code identity. An **ad-hoc** signature (`codesign -s -`) has none, so each
+time your OAuth token refreshes (a few times a day) and the app re-reads the
+Keychain, macOS asks again.
+
+The fix is `setup-signing.sh`: it creates a self-signed code-signing certificate,
+and `build.sh` signs the app with it. With a stable identity, a single "Always
+Allow" sticks across token refreshes and rebuilds. (The token lives **only** in the
+Keychain on macOS — there's no plaintext file to read instead.)
+
+You'll see one **`codesign` wants to access key** prompt the first time you build
+after running `setup-signing.sh` — that's `codesign` using the new signing key (not
+your token); click **Always Allow**.
 
 ## How it works
 
@@ -88,7 +107,8 @@ copy you later move or delete won't launch.
 
 ```
 Sources/main.swift        # the entire app
-build.sh                  # compile + bundle + ad-hoc sign (+ optional install)
+build.sh                  # compile + bundle + sign (+ optional install)
+setup-signing.sh          # one-time: create the stable code-signing identity
 menubar_agent_prompt.md   # original spec
 ```
 
