@@ -307,21 +307,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Menu bar shows two numbers — session (5hr) on the left, weekly on the
-    /// right — and no icon. Turns orange at ≥80% / red at ≥95% (highest of the two).
+    /// right — and no icon. Each number independently turns orange at ≥80% /
+    /// red at ≥95%; a number below 80% keeps the default menu-bar color.
     private func setMenuBar(five: Int?, week: Int?) {
         guard let button = statusItem.button else { return }
         button.image = nil
 
         let left = five.map { "\($0)%" } ?? "–"
         let right = week.map { "\($0)%" } ?? "–"
-        let text = "\(left)  \(right)"
+        let leftColor = warnColor(five ?? 0)
+        let rightColor = warnColor(week ?? 0)
 
-        let level = max(five ?? 0, week ?? 0)
-        if let color = warnColor(level) {
-            button.attributedTitle = NSAttributedString(string: text, attributes: [.foregroundColor: color])
-        } else {
-            button.title = text     // plain title: adapts to light/dark menu bar
+        // Neither high: a plain title adapts to light/dark and inverts on highlight.
+        if leftColor == nil && rightColor == nil {
+            button.title = "\(left)  \(right)"
+            return
         }
+
+        // Otherwise color each number by its own level, leaving a normal one default.
+        let title = NSMutableAttributedString()
+        title.append(NSAttributedString(string: left,
+            attributes: leftColor.map { [.foregroundColor: $0] } ?? [:]))
+        title.append(NSAttributedString(string: "  "))
+        title.append(NSAttributedString(string: right,
+            attributes: rightColor.map { [.foregroundColor: $0] } ?? [:]))
+        button.attributedTitle = title
     }
 
     private func warnColor(_ level: Int) -> NSColor? {
