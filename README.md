@@ -18,26 +18,25 @@ which is exactly why the hardcoded-schema community apps stopped working.
 
 ## Build & run
 
-Requires the Swift toolchain (Xcode or Command Line Tools: `xcode-select --install`).
-Targets macOS 13+; `build.sh` compiles for your Mac's architecture (Apple Silicon or Intel).
+**Requirements:** macOS 13+ (Apple Silicon or Intel), the Swift toolchain (Xcode or
+Command Line Tools — `xcode-select --install`), and **Claude Code installed and
+logged in** (the app reads your token from the Keychain item Claude Code creates).
 
 ```sh
-# One-time: create a stable code-signing identity (see "Keychain prompts" below)
-./setup-signing.sh
-
-# Build and run from ./build/
-./build.sh
-open "build/Claude Usage Icon.app"
-
-# …or build, install to /Applications, and launch (recommended)
+git clone https://github.com/Simeon14/Claude-Usage-Icon.git
+cd Claude-Usage-Icon
 ./build.sh install
 ```
 
-`build.sh` compiles `Sources/main.swift` with `swiftc`, assembles a proper
-`Claude Usage Icon.app` bundle (with `LSUIElement` so there's no dock icon /
-window), and code-signs it with the stable identity created by `setup-signing.sh`
-(falling back to ad-hoc if that identity is missing). `./build.sh install`
-additionally copies it to `/Applications` and launches it.
+That one command does everything: on first run it creates a local code-signing
+identity (via `setup-signing.sh`), compiles `Sources/main.swift` with `swiftc`,
+assembles a proper `Claude Usage Icon.app` bundle (`LSUIElement`, so no dock icon /
+window), signs it, copies it to `/Applications`, and launches it. (To build without
+installing, run `./build.sh` then `open "build/Claude Usage Icon.app"`.)
+
+During install you'll get **two one-time Keychain prompts** — one for `codesign` to
+use the new signing key, one for the app to read your Claude token. Click **Always
+Allow** on both.
 
 ### Start at login
 
@@ -51,9 +50,9 @@ copy you later move or delete won't launch.
 
 ### First launch
 
-- **Unsigned app warning:** because the app is only ad-hoc signed, the first time
-  you may need to **right-click the app → Open** (or approve it in System Settings
-  → Privacy & Security) to get past Gatekeeper.
+- **Gatekeeper:** the app is signed with a local self-signed certificate (not a paid
+  Apple Developer ID), so the first time you may need to **right-click the app → Open**
+  (or approve it in System Settings → Privacy & Security).
 - **Keychain prompt:** the first time it reads your token you'll see
   *"Claude Usage Icon wants to use information stored in 'Claude Code-credentials'
   in your keychain."* Click **Always Allow** (once). The token is then cached in
@@ -68,14 +67,13 @@ cause is **code signing**. macOS only persists "Always Allow" for apps with a
 time your OAuth token refreshes (a few times a day) and the app re-reads the
 Keychain, macOS asks again.
 
-The fix is `setup-signing.sh`: it creates a self-signed code-signing certificate,
-and `build.sh` signs the app with it. With a stable identity, a single "Always
-Allow" sticks across token refreshes and rebuilds. (The token lives **only** in the
-Keychain on macOS — there's no plaintext file to read instead.)
+The fix is a stable self-signed code-signing certificate. `build.sh` creates one
+automatically on first run (via `setup-signing.sh`) and signs the app with it, so a
+single "Always Allow" sticks across token refreshes and rebuilds. (The token lives
+**only** in the Keychain on macOS — there's no plaintext file to read instead.)
 
-You'll see one **`codesign` wants to access key** prompt the first time you build
-after running `setup-signing.sh` — that's `codesign` using the new signing key (not
-your token); click **Always Allow**.
+You'll see one **`codesign` wants to access key** prompt on your first build —
+that's `codesign` using the new signing key (not your token); click **Always Allow**.
 
 ## How it works
 

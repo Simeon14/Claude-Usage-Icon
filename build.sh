@@ -1,6 +1,7 @@
 #!/bin/bash
 # Build "Claude Usage Icon.app" from Sources/main.swift — no Xcode project required.
-# Produces an ad-hoc-signed .app bundle in ./build/.
+# On first run it creates a local code-signing identity (via setup-signing.sh) so
+# macOS keeps honoring "Always Allow" for Keychain access.
 #
 # Usage:
 #   ./build.sh            build into ./build/
@@ -12,11 +13,20 @@ cd "$(dirname "$0")"
 APP_NAME="Claude Usage Icon"          # bundle + display name
 EXEC_NAME="ClaudeUsageIcon"           # executable filename (no spaces)
 BUNDLE_ID="com.local.claude-usage-icon"
+SIGN_ID="Claude Usage Icon Local Signing"
 DEPLOY_TARGET="13.0"
 
 BUILD_DIR="build"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
+
+# Make sure a stable code-signing identity exists before building. This is what
+# stops macOS from re-prompting for Keychain access. setup-signing.sh is
+# idempotent, so this only does work on the very first build.
+if ! security find-certificate -c "$SIGN_ID" >/dev/null 2>&1; then
+  echo "==> Creating code-signing identity (first run only)"
+  bash setup-signing.sh
+fi
 
 echo "==> Cleaning"
 rm -rf "$APP_DIR"
@@ -55,14 +65,13 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-SIGN_ID="Claude Usage Icon Local Signing"
 echo "==> Signing"
 if codesign --force --sign "$SIGN_ID" "$APP_DIR" 2>/dev/null; then
   echo "    signed with stable identity: $SIGN_ID"
   echo "    (this is what makes the Keychain 'Always Allow' actually stick)"
 else
-  echo "    stable identity '$SIGN_ID' not found — falling back to ad-hoc."
-  echo "    Ad-hoc signing causes repeated Keychain prompts; run ./setup-signing.sh once to fix."
+  echo "    stable identity '$SIGN_ID' unavailable — falling back to ad-hoc"
+  echo "    (the app still runs, but macOS may re-prompt for Keychain access)"
   codesign --force --sign - "$APP_DIR" >/dev/null 2>&1 \
     && echo "    signed (ad-hoc)" \
     || echo "    (codesign skipped — app still runs)"
