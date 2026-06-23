@@ -34,6 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let menu = NSMenu()
     private let fiveHourItem = NSMenuItem()
     private let weekItem = NSMenuItem()
+    private let resetItem = NSMenuItem()
+    private let weekResetItem = NSMenuItem()
+    private let resetSeparator = NSMenuItem.separator()
     private let loginMenuItem = NSMenuItem()
     private var timer: Timer?
 
@@ -69,6 +72,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         menu.addItem(fiveHourItem)
         menu.addItem(weekItem)
+        menu.addItem(resetSeparator)        // reset times in their own section
+        menu.addItem(resetItem)
+        menu.addItem(weekResetItem)
         menu.addItem(.separator())
         loginMenuItem.title = "Open at Login"
         loginMenuItem.action = #selector(toggleLoginItem)
@@ -229,13 +235,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func parseISODate(_ s: String) -> Date? {
+        // The API sends fractional seconds (…:00.137431+00:00), which
+        // ISO8601DateFormatter rejects by default. Strip them (we only show
+        // minutes), then parse; the DateFormatter fallback handles "+00:00".
+        let cleaned = s.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)
         let iso = ISO8601DateFormatter()
-        if let d = iso.date(from: s) { return d }
-        // Fallback for offsets like "+00:00" that some formatter versions reject.
+        if let d = iso.date(from: cleaned) { return d }
         let df = DateFormatter()
         df.locale = Locale(identifier: "en_US_POSIX")
         df.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZZZZZ"
-        return df.date(from: s)
+        return df.date(from: cleaned)
     }
 
     // MARK: Rendering
@@ -265,6 +274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func renderUsage(five: Int?, week: Int?, fiveReset: Date?, weekReset: Date?) {
         weekItem.isHidden = false
+        resetItem.isHidden = false
+        weekResetItem.isHidden = false
+        resetSeparator.isHidden = false
 
         fiveHourItem.image = symbol("chart.pie.fill")
         fiveHourItem.title = "5hr: " + percentText(five)
@@ -274,6 +286,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         weekItem.title = "Week: " + percentText(week)
         weekItem.toolTip = resetTooltip("Weekly limit", weekReset)
 
+        // Reset section: when each window returns to 0%.
+        resetItem.image = symbol("arrow.clockwise")
+        resetItem.title = resetRowTitle(fiveReset)
+        weekResetItem.image = symbol("arrow.clockwise")
+        weekResetItem.title = weekResetRowTitle(weekReset)
+
         setMenuBar(five: five, week: week)
     }
 
@@ -282,6 +300,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fiveHourItem.title = message
         fiveHourItem.toolTip = nil
         weekItem.isHidden = true
+        resetItem.isHidden = true
+        weekResetItem.isHidden = true
+        resetSeparator.isHidden = true
         setMenuBar(five: nil, week: nil)
     }
 
@@ -319,6 +340,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         df.dateStyle = .medium
         df.timeStyle = .short
         return "\(label) resets \(df.string(from: date))"   // local time
+    }
+
+    /// Friendly one-line "5hr resets at …" for the menu row, in local time.
+    private func resetRowTitle(_ date: Date?) -> String {
+        guard let date = date else { return "5hr resets: —" }
+        let time = DateFormatter()
+        time.timeStyle = .short
+        time.dateStyle = .none
+        let t = time.string(from: date)
+
+        let cal = Calendar.current
+        if cal.isDateInToday(date) {
+            return "5hr resets at \(t)"
+        } else if cal.isDateInTomorrow(date) {
+            return "5hr resets tomorrow at \(t)"
+        } else {
+            let day = DateFormatter()
+            day.dateFormat = "EEE"   // Mon, Tue, …
+            return "5hr resets \(day.string(from: date)) at \(t)"
+        }
+    }
+
+    /// "Week resets Monday 8 AM" — weekday + time (minutes dropped on the hour).
+    private func weekResetRowTitle(_ date: Date?) -> String {
+        guard let date = date else { return "Week resets: —" }
+        let day = DateFormatter()
+        day.dateFormat = "EEEE"   // Monday
+        let weekday = day.string(from: date)
+
+        let time = DateFormatter()
+        let onTheHour = Calendar.current.component(.minute, from: date) == 0
+        time.dateFormat = onTheHour ? "h a" : "h:mm a"   // "8 AM" / "8:30 AM"
+        return "Week resets \(weekday) \(time.string(from: date))"
     }
 
     private func symbol(_ name: String) -> NSImage? {
